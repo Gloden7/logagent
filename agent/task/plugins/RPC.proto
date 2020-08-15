@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package plugins;
+import public "google/protobuf/timestamp.proto";
+
+message ProtectionLog {
+    int32 module = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    string txn_id = 3;
+    string app_id = 4;
+    string dst_ip = 5;
+    int32 dst_port = 6;
+    string src_ip = 7;
+    int32 src_port = 8;
+    string url = 9;
+    string method = 10;
+    string host = 11;
+    string http_version = 12;
+    string req_headers = 13;
+    bytes req_body = 14;
+    int32 res_code = 15;
+    string res_headers = 16;
+    bytes res_body = 17;
+    string rule_id = 18;
+    string rule_version = 19;
+    string category = 20;
+    string trigger_message = 21;
+}
+
+message SystemLog {
+    google.protobuf.Timestamp timestamp = 2;
+    string event = 3;
+    string detail = 4;
+}
+
+message OperationLog {
+    google.protobuf.Timestamp timestamp = 2;
+    int64 user_id = 3;
+    string ip = 4;
+    int64 action = 5;
+    string result = 6;
+    string detail = 7;
+}
+
+message Reply {
+    int32 code = 1;
+    string message = 2;
+}
+
+service logger {
+    rpc Emerg(ProtectionLog) returns (Reply) {}
+    rpc Alert(ProtectionLog) returns (Reply) {}
+    rpc Crit(ProtectionLog) returns (Reply) {}
+    rpc Error(ProtectionLog) returns (Reply) {}
+    rpc Warn(ProtectionLog) returns (Reply) {}
+    rpc Notice(ProtectionLog) returns (Reply) {}
+    rpc Info(ProtectionLog) returns (Reply) {}
+    rpc Debug(ProtectionLog) returns (Reply) {}
+
+    rpc EmergSysLog(SystemLog) returns (Reply) {}
+    rpc AlertSysLog(SystemLog) returns (Reply) {}
+    rpc CritSysLog(SystemLog) returns (Reply) {}
+    rpc ErrorSysLog(SystemLog) returns (Reply) {}
+    rpc WarnSysLog(SystemLog) returns (Reply) {}
+    rpc NoticeSysLog(SystemLog) returns (Reply) {}
+    rpc InfoSysLog(SystemLog) returns (Reply) {}
+    rpc DebugSysLog(SystemLog) returns (Reply) {}
+
+    rpc EmergOpLog(OperationLog) returns (Reply) {}
+    rpc AlertOpLog(OperationLog) returns (Reply) {}
+    rpc CritOpLog(OperationLog) returns (Reply) {}
+    rpc ErrorOpLog(OperationLog) returns (Reply) {}
+    rpc WarnOpLog(OperationLog) returns (Reply) {}
+    rpc NoticeOpLog(OperationLog) returns (Reply) {}
+    rpc InfoOpLog(OperationLog) returns (Reply) {}
+    rpc DebugOpLog(OperationLog) returns (Reply) {}
+}
