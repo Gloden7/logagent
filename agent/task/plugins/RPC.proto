@@ -5,7 +5,6 @@ import public "google/protobuf/timestamp.proto";
 
 message ProtectionLog {
     int32 module = 1;
-    google.protobuf.Timestamp timestamp = 2;
     string txn_id = 3;
     string app_id = 4;
     string dst_ip = 5;
@@ -28,18 +27,17 @@ message ProtectionLog {
 }
 
 message SystemLog {
-    google.protobuf.Timestamp timestamp = 2;
     string event = 3;
     string detail = 4;
 }
 
 message OperationLog {
-    google.protobuf.Timestamp timestamp = 2;
-    int64 user_id = 3;
-    string ip = 4;
-    int64 action = 5;
-    string result = 6;
-    string detail = 7;
+    int64 user_id = 0;
+    string user_name = 1;
+    string ip = 2;
+    int64 action = 3;
+    string result = 4;
+    string detail = 5;
 }
 
 message Reply {
@@ -49,29 +47,20 @@ message Reply {
 
 service logger {
     rpc Emerg(ProtectionLog) returns (Reply) {}
-    rpc Alert(ProtectionLog) returns (Reply) {}
     rpc Crit(ProtectionLog) returns (Reply) {}
-    rpc Error(ProtectionLog) returns (Reply) {}
     rpc Warn(ProtectionLog) returns (Reply) {}
     rpc Notice(ProtectionLog) returns (Reply) {}
     rpc Info(ProtectionLog) returns (Reply) {}
-    rpc Debug(ProtectionLog) returns (Reply) {}
 
     rpc EmergSysLog(SystemLog) returns (Reply) {}
-    rpc AlertSysLog(SystemLog) returns (Reply) {}
     rpc CritSysLog(SystemLog) returns (Reply) {}
-    rpc ErrorSysLog(SystemLog) returns (Reply) {}
     rpc WarnSysLog(SystemLog) returns (Reply) {}
     rpc NoticeSysLog(SystemLog) returns (Reply) {}
     rpc InfoSysLog(SystemLog) returns (Reply) {}
-    rpc DebugSysLog(SystemLog) returns (Reply) {}
 
     rpc EmergOpLog(OperationLog) returns (Reply) {}
-    rpc AlertOpLog(OperationLog) returns (Reply) {}
     rpc CritOpLog(OperationLog) returns (Reply) {}
-    rpc ErrorOpLog(OperationLog) returns (Reply) {}
     rpc WarnOpLog(OperationLog) returns (Reply) {}
     rpc NoticeOpLog(OperationLog) returns (Reply) {}
     rpc InfoOpLog(OperationLog) returns (Reply) {}
-    rpc DebugOpLog(OperationLog) returns (Reply) {}
 }

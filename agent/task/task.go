@@ -1,27 +1,16 @@
 package task
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"logagent/util"
 	"math/rand"
-	"net"
-	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
 
-	pb "logagent/agent/task/plugins"
-
-	"github.com/hpcloud/tail"
-	"github.com/natefinch/lumberjack"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 )
 
 type msg map[string]interface{}
@@ -62,14 +51,8 @@ func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
 	}
 	t.initCollector(conf.Collector)
 
-	if conf.GoNum > 1 {
-		if conf.GoNum < 10 {
-			t.goNum = conf.GoNum - 1
-		} else {
-			t.goNum = 9
-		}
-	} else {
-		t.goNum = 0
+	if conf.GoNum > 1 && conf.GoNum < 10 {
+		t.goNum = conf.GoNum
 	}
 
 	if len(conf.Parser.Mode) > 0 {
@@ -98,10 +81,7 @@ func (t *Task) Run() {
 		go t.genDegradationRate()
 	}
 	runFunc(t.ctx)
-	for _, closer := range t.closers {
-		closer.Close()
-	}
-	close(t.msgs)
+	t.Close()
 }
 
 func (t *Task) getRunFunc() func(ctx context.Context) {
@@ -175,181 +155,13 @@ func (t *Task) watchMsgs(runFunc func(ctx context.Context)) {
 func (t *Task) initCollector(conf collectorConf) {
 	switch conf.Mode {
 	case "api":
-		var url string
-		if len(conf.URL) > 0 {
-			if !strings.HasPrefix(conf.URL, "/") {
-				conf.URL = "/" + conf.URL
-			}
-			url = conf.URL
-		} else {
-			url = "/logs"
-		}
-
-		serverMux := http.NewServeMux()
-
-		serverMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == "POST" {
-				var data map[string]interface{}
-				decode := json.NewDecoder(r.Body)
-				err := decode.Decode(&data)
-
-				if err != nil {
-					t.logger.Warn(err)
-					w.WriteHeader(400)
-					return
-				}
-
-				t.msgs <- data
-				w.WriteHeader(201)
-			}
-		})
-
-		srv := http.Server{
-			Addr:    conf.Addr,
-			Handler: serverMux,
-		}
-
-		t.addCloser(&srv)
-
-		t.collector = func() {
-			t.logger.Infof("API server start %s", conf.Addr)
-			err := srv.ListenAndServe()
-
-			if err != nil && err != http.ErrServerClosed {
-				t.logger.Panicf("API server start err %s", err)
-			}
-		}
+		t.setAPICollector(conf)
 	case "file":
-		tails, err := tail.TailFile(conf.FileName, tail.Config{
-			ReOpen:    !conf.NoReopen,
-			Follow:    true,
-			Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
-			MustExist: false,
-			Poll:      true,
-		})
-
-		if err != nil {
-			t.logger.Panicf("tailf err %s", err)
-		}
-
-		t.collector = func() {
-			var ok bool
-			var line *tail.Line
-
-			for {
-				select {
-				case <-t.ctx.Done():
-					return
-				case line, ok = <-tails.Lines:
-					if !ok {
-						fmt.Printf("tail file close reopen, filename: %s\n", tails.Filename)
-						time.Sleep(1000 * time.Millisecond)
-						continue
-					}
-					t.msgs <- map[string]interface{}{
-						"message": line.Text,
-						"time":    line.Time,
-					}
-				}
-			}
-		}
-
+		t.setFileCollector(conf)
 	case "syslog":
-		var end byte
-		if len(conf.End) > 0 {
-			end = []byte(conf.End)[0]
-		} else {
-			end = '\x00'
-		}
-		if len(conf.Addr) == 0 {
-			conf.Addr = ":514"
-		}
-
-		t.collector = func() {
-			if !strings.Contains(conf.Protocol, "udp") {
-				listener, err := net.Listen("tcp", conf.Addr)
-				if err != nil {
-					t.logger.Panic(err)
-				}
-
-				t.logger.Infof("%s server start %s", conf.Protocol, conf.Addr)
-
-				for {
-					select {
-					case <-t.ctx.Done():
-						return
-					default:
-						conn, err := listener.Accept() // 建立连接
-						if err != nil {
-							t.logger.Warn(err)
-							continue
-						}
-						defer conn.Close()
-
-						t.logger.Infof("Client %s establishes connection", conn.RemoteAddr())
-						go func() {
-							defer conn.Close()
-							reader := bufio.NewReader(conn)
-							for {
-								msg, err := decode(reader, end)
-								if err == io.EOF {
-									t.logger.Warn("Client disconnect")
-									break
-								}
-								if err != nil {
-									t.logger.Warn(err)
-									continue
-								}
-								t.msgs <- msg
-							}
-						}()
-					}
-				}
-			} else {
-				listener, err := net.ListenPacket("udp", conf.Addr)
-				if err != nil {
-					t.logger.Panic(err)
-				}
-				defer listener.Close()
-				t.logger.Infof("%s server start %s", conf.Protocol, conf.Addr)
-
-				for {
-					select {
-					case <-t.ctx.Done():
-						return
-					default:
-						var buf [1024]byte
-						n, _, err := listener.ReadFrom(buf[:])
-						if err != nil {
-							t.logger.Warn(err)
-							continue
-						}
-						reader := bufio.NewReader(bytes.NewReader(buf[:n]))
-						msg, err := decode(reader, end)
-						if err != nil {
-							t.logger.Warn(err)
-							continue
-						}
-						t.msgs <- msg
-					}
-				}
-			}
-		}
+		t.setSyslogCollector(conf)
 	case "grpc":
-		t.collector = func() {
-			listener, err := net.Listen("tcp", conf.Addr)
-			if err != nil {
-				t.logger.Panic(err)
-			}
-			var opts []grpc.ServerOption
-			s := grpc.NewServer(opts...)
-			pb.RegisterLoggerServer(s, &server{
-				t: t,
-			})
-			if err := s.Serve(listener); err != nil {
-				t.logger.Panicf("failed to serve: %v", err)
-			}
-		}
+		t.setGRPCCollector(conf)
 	default:
 		t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
 	}
@@ -492,166 +304,11 @@ func (t *Task) initHandlers(handlesConf []handlerConf) {
 	for _, conf := range handlesConf {
 		switch conf.Mode {
 		case "stream":
-			var template []byte
-			if len(conf.Template) > 0 {
-				template = util.Str2bytes(conf.Template)
-			} else {
-				template = util.Str2bytes("${MESSAGE}")
-			}
-			t.addHandle(func(msg map[string]interface{}) {
-				content := templates(template, msg)
-				_, err := os.Stdout.Write(content)
-				if err != nil {
-					t.logger.Warn(err)
-				}
-			})
+			t.addStreamHandler(conf)
 		case "file":
-			if len(conf.FileName) == 0 {
-				t.logger.Panic("File configuration `path` cannot be empty")
-			}
-
-			var maxSize int
-			if conf.MaxSize > 0 {
-				maxSize = conf.MaxSize
-			} else {
-				maxSize = 10
-			}
-
-			f := &lumberjack.Logger{
-				Filename:   conf.FileName,
-				MaxSize:    maxSize,
-				MaxBackups: conf.MaxBackups,
-				MaxAge:     conf.MaxAge,
-				Compress:   conf.Compress,
-			}
-			t.addCloser(f)
-
-			var template []byte
-			if len(conf.Template) > 0 {
-				template = util.Str2bytes(conf.Template)
-			} else {
-				template = util.Str2bytes("${MESSAGE}")
-			}
-
-			t.addHandle(func(msg map[string]interface{}) {
-				content := templates(template, msg)
-				_, err := f.Write(content)
-				if err != nil {
-					t.logger.Warn(err)
-				}
-			})
+			t.addFileHandler(conf)
 		case "database":
-			if len(conf.Table) == 0 {
-				t.logger.Panic("Database configuration `table` cannot be empty")
-			}
-
-			if len(conf.Columns) == 0 {
-				t.logger.Panic("Database configuration `columns` cannot be empty")
-			}
-			if len(conf.Fields) != 0 {
-				if len(conf.Fields) != len(conf.Columns) {
-					t.logger.Panic("Columns fields have different lengths")
-				}
-			}
-
-			var timeout time.Duration
-			if conf.Timeout > 0 {
-				timeout = time.Second * time.Duration(conf.Timeout)
-			} else {
-				timeout = time.Second * 10
-			}
-
-			temp := strings.SplitN(conf.URI, ":", 2)
-			if len(temp) < 2 {
-				t.logger.Panic("Bad database URI")
-			}
-			dn := temp[0]
-			dsn := strings.TrimLeft(temp[1], "/")
-
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-
-			if dn == "mongodb" {
-				i := strings.LastIndexByte(conf.URI, '/')
-				if i == -1 {
-					t.logger.Panic("Bad database URI")
-				}
-				dsn = conf.URI[:i]
-				database := conf.URI[i+1:]
-
-				clt, err := initMongoDB(ctx, dsn)
-				if err != nil {
-					t.logger.Panicf("Mongodb connection failed %s", err)
-				}
-				t.addCloser(clt)
-
-				collection := clt.Client.Database(database).Collection(conf.Table)
-				sortFunc := genSortFunc(conf.Columns)
-
-				t.addHandle(func(data map[string]interface{}) {
-					insertData := sortFunc(data)
-					_, err = collection.InsertOne(context.TODO(), insertData)
-					if err != nil {
-						t.logger.Warn(err)
-					}
-				})
-
-				return
-			}
-
-			switch dn {
-			case "postgresql":
-				dn = "pg"
-				dsn = conf.URI
-			case "mysql":
-				i := strings.IndexByte(dsn, '@') + 1
-				j := strings.IndexByte(dsn, '/')
-				if i == 0 || j == -1 {
-					t.logger.Panic("Bad database URI")
-				}
-				dsn = dsn[:i] + "tcp(" + dsn[i:j] + ")" + dsn[j:]
-			}
-
-			dbInit := make(chan bool)
-			go func() {
-				select {
-				case <-ctx.Done():
-					t.logger.Panic("Database connection timed out")
-				case <-dbInit:
-					break
-				}
-			}()
-
-			database, err := initDatabase(dn, dsn)
-			dbInit <- true
-			if err != nil {
-				t.logger.Panic(err)
-			}
-			t.addCloser(database)
-
-			if len(conf.Fields) > 0 {
-				err = createTable(database, dn, conf.Table, conf.Fields)
-				if err != nil {
-					t.logger.Panic(err)
-				}
-			}
-			sql := genInsertSQL(dn, conf.Table, conf.Columns)
-			stmt, err := database.Prepare(sql)
-			if err != nil {
-				t.logger.Panic(err)
-			}
-			t.addCloser(stmt)
-
-			sortFunc := genSortFunc(conf.Columns)
-
-			t.addHandle(func(data map[string]interface{}) {
-				insertData := sortFunc(data)
-				_, err = stmt.Exec(insertData...)
-				if err != nil {
-					t.logger.Warn(err)
-				}
-			})
-
+			t.addDBHandler(conf)
 		default:
 			t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
 		}
@@ -672,6 +329,10 @@ func (t *Task) Close() error {
 		cancel()
 	}
 	t.cancel()
+
+	for _, closer := range t.closers {
+		closer.Close()
+	}
 	return nil
 }
 
@@ -683,6 +344,11 @@ func (t *Task) SetSamplingRate(s float64) {
 func (t *Task) genDegradationRate() {
 	t.degradationChan = make(chan bool, 10)
 	for {
-		t.degradationChan <- (rand.Float64() > t.samplingRate)
+		select {
+		case <-t.ctx.Done():
+			return
+		default:
+			t.degradationChan <- (rand.Float64() > t.samplingRate)
+		}
 	}
 }

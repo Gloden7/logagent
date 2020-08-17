@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"logagent/util"
 	"strconv"
+	"time"
 )
 
 func parseFacilitySeverity(p []byte) (int, int, error) {
@@ -32,8 +33,9 @@ func decode(reader *bufio.Reader, end byte) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{
-		"facility": facility,
-		"severity": severity,
-		"message":  util.Bytes2str(msgBytes[:len(msgBytes)-1]),
+		"facility":  facility,
+		"severity":  severity,
+		"timestamp": time.Now(),
+		"message":   util.Bytes2str(msgBytes[:len(msgBytes)-1]),
 	}, nil
 }

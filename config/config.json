@@ -65,6 +65,6 @@
 					"Template": "${message}|${timestamp}|${name}"
 				}
 			]
-		} 
+		}
 	]
 }

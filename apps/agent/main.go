@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"logagent/agent"
 	"logagent/util"
+	"runtime/pprof"
 	"strconv"
 	"syscall"
 
@@ -26,6 +27,7 @@ func main() {
 	pflag.String("operation", "start", "操作(start,restart,stop)")
 	pflag.String("config", "../../config/config.json", "配置文件路径")
 	pflag.Bool("dev", false, "是否以开发模式运行")
+	pflag.Bool("cpu", false, "生成 cpu Profiling文件")
 
 	pflag.Parse()
 	viper.BindPFlags(pflag.CommandLine)
@@ -74,6 +76,13 @@ func main() {
 		ioutil.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0666)
 		defer os.Remove(pidFile)
 
+		if viper.GetBool("cpu") {
+			if f, err := os.Create("./cpu.prof"); err == nil {
+				pprof.StartCPUProfile(f)
+				defer pprof.StopCPUProfile()
+			}
+		}
+
 		a := agent.New(viper.GetViper())
 		a.Main()
 	}
@@ -97,6 +106,7 @@ func main() {
 	}
 
 	op := viper.GetString("operation")
+
 	switch op {
 	case "start":
 		start()

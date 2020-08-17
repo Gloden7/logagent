@@ -9,6 +9,7 @@ require (
 	github.com/hpcloud/tail v1.0.0
 	github.com/mattn/go-sqlite3 v1.14.0
 	github.com/natefinch/lumberjack v2.0.0+incompatible
+	github.com/radovskyb/watcher v1.0.7 // indirect
 	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.1
