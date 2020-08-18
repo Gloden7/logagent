@@ -7,61 +7,49 @@ import (
 	"logagent/util"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	uuid "github.com/satori/go.uuid"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-// Agent agent
+// Agent agent结构体
 type Agent struct {
+	cpuLimit  float64
 	waitGroup util.WaitGroupWrapper
 	tasks     map[uuid.UUID]*task.Task
-	viper     *viper.Viper
 	logger    *zap.SugaredLogger
+	conf      []*task.Conf
 }
 
-// New create a new agent
-func New(viper *viper.Viper) *Agent {
-
-	logsConf := logging.Conf{}
-	if err := viper.UnmarshalKey("logs", &logsConf); err != nil {
-		panic(err)
+// New 创建一个Agent对象
+func New(conf *Conf) *Agent {
+	if conf.GoNum > 0 {
+		runtime.GOMAXPROCS(conf.GoNum)
 	}
-	logger := logging.New(logsConf, viper.GetBool("dev"))
-
+	logger := logging.New(conf.Logs)
 	return &Agent{
-		viper:  viper,
-		logger: logger,
-		tasks:  make(map[uuid.UUID]*task.Task),
+		cpuLimit: conf.CPULimit,
+		logger:   logger,
+		conf:     conf.Tasks,
+		tasks:    make(map[uuid.UUID]*task.Task),
 	}
 }
 
-// Main agent main
+// Main 主函数
 func (a *Agent) Main() {
 
-	confs := []*task.Conf{}
-	if err := viper.UnmarshalKey("tasks", &confs); err != nil {
-		a.logger.Panic(err)
+	d := a.cpuLimit > 0
+	for _, conf := range a.conf {
+		t := task.New(a.logger, conf, d)
+		a.addTask(t)
 	}
-
-	cpulimit := viper.GetFloat64("cpuLimit")
-
-	if cpulimit > 0 {
-		for _, conf := range confs {
-			t := task.New(a.logger, conf, true)
-			a.addTask(t)
-		}
-		go a.watchCPUUsage(cpulimit)
-	} else {
-		for _, conf := range confs {
-			t := task.New(a.logger, conf, false)
-			a.addTask(t)
-		}
+	if d {
+		go a.watchCPUUsage()
 	}
 
 	for k, t := range a.tasks {
@@ -95,10 +83,10 @@ func (a *Agent) close() error {
 	return nil
 }
 
-func (a *Agent) watchCPUUsage(cpuli float64) {
+func (a *Agent) watchCPUUsage() {
 	for {
 		cpuUsage := getCPUUsage()
-		if cpuUsage > cpuli {
+		if cpuUsage > a.cpuLimit {
 			samplingRate := (100 - cpuUsage) / 100
 			for _, t := range a.tasks {
 				t.SetSamplingRate(samplingRate)

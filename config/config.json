@@ -3,8 +3,7 @@
 		"MaxSize": 10,
 		"MaxBackups": 5,
 		"MaxAge": 30,
-		"Compress": false,
-		"FileName": "./logs/agent.log"
+		"Compress": false
 	},
 	"tasks": [
 		{
@@ -13,56 +12,12 @@
 				"Addr": "127.0.0.1:8000"
 			},
 			"Parser": {
-				"Mode": "csv",
-				"Delimiters": "|",
-				"Columns": [
-					"name",
-					"timestamp",
-					"levelno",
-					"lineno",
-					"levelname",
-					"message"
-				]
+				"Mode": "jsonify"
 			},
-			"Rewrites": [
-				{
-					"Mode": "mapping",
-					"Column": "levelname",
-					"Mapping": {
-						"CRITICAL": "严重",
-						"DEBUG": "调试",
-						"ERROR": "错误",
-						"INFO": "信息",
-						"WARN": "警告",
-						"WARNING": "警告"
-					}
-				}
-			],
 			"Handlers": [
 				{
-					"Mode": "database",
-					"URI": "postgresql://postgres:123qwe@127.0.0.1:5432/mydb",
-					"Table": "logs",
-					"Columns": [
-						"name",
-						"timestamp",
-						"levelno",
-						"lineno",
-						"levelname",
-						"message"
-					],
-					"Fields": [
-						"name varchar(48) NULL",
-						"timestamp timestamp without time zone NULL",
-						"levelno varchar(48) NULL",
-						"lineno varchar(48)",
-						"levelname varchar(48) NULL",
-						"message varchar(48) NULL"
-					]
-				},
-				{
 					"Mode": "stream",
-					"Template": "${message}|${timestamp}|${name}"
+					"Template": "${timestamp}|${url}|${name}"
 				}
 			]
 		}

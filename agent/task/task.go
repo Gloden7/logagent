@@ -21,7 +21,7 @@ type closer interface {
 
 type process func(msg map[string]interface{}) map[string]interface{}
 
-// Task log task
+// Task 任务结构体
 type Task struct {
 	samplingRate    float64
 	goNum           int
@@ -38,7 +38,7 @@ type Task struct {
 	closers         []closer
 }
 
-// New create log task
+// New 创建一个任务对象
 func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
 	ctx, cancel := context.WithCancel(context.Background())
 	t := &Task{
@@ -156,12 +156,8 @@ func (t *Task) initCollector(conf collectorConf) {
 	switch conf.Mode {
 	case "api":
 		t.setAPICollector(conf)
-	case "file":
-		t.setFileCollector(conf)
 	case "syslog":
 		t.setSyslogCollector(conf)
-	case "grpc":
-		t.setGRPCCollector(conf)
 	default:
 		t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
 	}
@@ -323,7 +319,7 @@ func (t *Task) addCloser(c closer) {
 	t.closers = append(t.closers, c)
 }
 
-// Close task exit
+// Close 任务结束
 func (t *Task) Close() error {
 	for _, cancel := range t.goCancels {
 		cancel()
@@ -336,7 +332,7 @@ func (t *Task) Close() error {
 	return nil
 }
 
-// SetSamplingRate setSamplingRate
+// SetSamplingRate 给任务设置采样率
 func (t *Task) SetSamplingRate(s float64) {
 	t.samplingRate = s
 }

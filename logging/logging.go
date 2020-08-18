@@ -18,16 +18,11 @@ type Conf struct {
 }
 
 // New create a logger
-func New(conf Conf, dev bool) *zap.SugaredLogger {
+func New(conf Conf) *zap.SugaredLogger {
 	var writeSyncer zapcore.WriteSyncer
 
-	if dev {
-		writeSyncer = zapcore.AddSync(os.Stdout)
-	} else {
-		writeSyncer = getLogWriter(conf)
-	}
+	writeSyncer = getLogWriter(conf)
 	encoder := getEncoder()
-
 	core := zapcore.NewCore(encoder, writeSyncer, zapcore.DebugLevel)
 
 	logger := zap.New(core, zap.AddCaller())
@@ -43,8 +38,8 @@ func getEncoder() zapcore.Encoder {
 }
 
 func getLogWriter(conf Conf) zapcore.WriteSyncer {
-	if len(conf.FileName) < 0 {
-		conf.FileName = "./logs/agent.log"
+	if len(conf.FileName) == 0 {
+		return zapcore.AddSync(os.Stdout)
 	}
 	lumberJackLogger := &lumberjack.Logger{
 		Filename:   conf.FileName,

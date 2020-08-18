@@ -76,34 +76,6 @@ func (t *Task) addDBHandler(conf handlerConf) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	if dn == "mongodb" {
-		i := strings.LastIndexByte(conf.URI, '/')
-		if i == -1 {
-			t.logger.Panic("Bad database URI")
-		}
-		dsn = conf.URI[:i]
-		database := conf.URI[i+1:]
-
-		clt, err := initMongoDB(ctx, dsn)
-		if err != nil {
-			t.logger.Panicf("Mongodb connection failed %s", err)
-		}
-		t.addCloser(clt)
-
-		collection := clt.Client.Database(database).Collection(conf.Table)
-		sortFunc := genSortFunc(conf.Columns)
-
-		t.addHandle(func(data map[string]interface{}) {
-			insertData := sortFunc(data)
-			_, err = collection.InsertOne(context.TODO(), insertData)
-			if err != nil {
-				t.logger.Warn(err)
-			}
-		})
-
-		return
-	}
-
 	switch dn {
 	case "postgresql":
 		dn = "pg"

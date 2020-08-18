@@ -1,15 +1,12 @@
 package task
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 
 	// mysql driver
 	_ "github.com/go-sql-driver/mysql"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 
 	// postgresql driver
 	_ "github.com/blusewang/pg"
@@ -43,35 +40,6 @@ func createTable(db *sql.DB, driverName string, table string, fields []string) e
 		return err
 	}
 	return nil
-}
-
-type mongoClient struct {
-	Client *mongo.Client
-}
-
-// Close mongo client disconnect
-func (c *mongoClient) Close() error {
-	return c.Client.Disconnect(nil)
-}
-
-// InitMongoDB 初始化mongodb数据库
-func initMongoDB(ctx context.Context, dsn string) (*mongoClient, error) {
-	clt, err := mongo.NewClient(options.Client().ApplyURI(dsn))
-	if err != nil {
-		return nil, err
-	}
-
-	err = clt.Connect(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	err = clt.Ping(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &mongoClient{clt}, nil
 }
 
 func genInsertSQL(dn string, tableName string, columns []string) string {
