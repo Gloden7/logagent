@@ -1,0 +1,11 @@
+2020-08-18T15:53:53.480+0800	INFO	agent/agent.go:69	task c1201672-ece1-4d07-ad82-65e7a6ed5d08 start
+2020-08-18T15:53:56.084+0800	INFO	agent/agent.go:93	task c1201672-ece1-4d07-ad82-65e7a6ed5d08 stop
+2020-08-18T16:28:20.500+0800	PANIC	task/task.go:162	Unsupported mode `grpc`
+2020-08-18T16:28:35.567+0800	INFO	task/collector.go:111	 server start 127.0.0.1:8000
+2020-08-18T16:28:35.567+0800	INFO	agent/agent.go:44	task a45af4a2-284f-4b67-86bb-0d321982fe07 start
+2020-08-18T16:28:38.833+0800	INFO	agent/agent.go:68	task a45af4a2-284f-4b67-86bb-0d321982fe07 stop
+2020-08-18T16:45:45.345+0800	INFO	task/collector.go:111	 server start 127.0.0.1:8000
+2020-08-18T16:45:45.345+0800	PANIC	task/task.go:219	Unsupported mode `json`
+2020-08-18T17:22:15.063+0800	INFO	task/collector.go:111	 server start 127.0.0.1:8000
+2020-08-18T17:22:15.064+0800	INFO	agent/agent.go:66	task df41cdbe-8e4c-4143-8d3e-b7df6719492c start
+2020-08-18T17:22:17.650+0800	INFO	agent/agent.go:90	task df41cdbe-8e4c-4143-8d3e-b7df6719492c stop

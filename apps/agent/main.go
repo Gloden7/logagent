@@ -2,62 +2,45 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"logagent/agent"
 	"logagent/util"
-	"runtime/pprof"
+	"os/exec"
 	"strconv"
 	"syscall"
 
 	"os"
-	"os/exec"
-	"runtime"
-
-	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 )
 
 func main() {
 	pidFile := "./pid"
 	command := "agent"
 
-	pflag.Int("maxProcs", 1, "使用`maxProcs`个OS线程运行程序")
-	pflag.Bool("deamon", false, "是否以守护进程方式运行")
-	pflag.String("operation", "start", "操作(start,restart,stop)")
-	pflag.String("config", "../../config/config.json", "配置文件路径")
-	pflag.Bool("dev", false, "是否以开发模式运行")
-	pflag.Bool("cpu", false, "生成 cpu Profiling文件")
+	var deamon bool
+	var op string
+	var confFile string
 
-	pflag.Parse()
-	viper.BindPFlags(pflag.CommandLine)
-
-	viper.SetDefault("maxProcs", func() int {
-		if numCPU := runtime.NumCPU() / 5; numCPU > 0 {
-			return numCPU
-		}
-		return 1
-	}())
-
-	runtime.GOMAXPROCS(viper.GetInt("maxProcs"))
-
-	deamon := viper.GetBool("deamon")
-
-	if deamon {
-		args := os.Args[1:]
-		for i, v := range args {
-			if v == "--deamon" || v == "--deamon=true" {
-				args = append(args[:i], args[i+1:]...)
-			}
-		}
-
-		cmd := exec.Command(os.Args[0], args...)
-		cmd.Start()
-		fmt.Fprintf(os.Stdout, "[PID] %d\n", cmd.Process.Pid)
-		os.Exit(0)
-	}
+	flag.StringVar(&confFile, "f", "../../config/config.json", "指定`logagent`配置文件")
+	flag.BoolVar(&deamon, "deamon", false, "以守护进程方式运行")
+	flag.StringVar(&op, "opt", "start", "指定`logagent`操作start,restart,stop")
+	flag.Parse()
 
 	start := func() {
+		if deamon {
+			args := os.Args[1:]
+			for i, v := range args {
+				if v == "-deamon" || v == "--deamon" || v == "-deamon=true" || v == "-deamon==true" {
+					args = append(args[:i], args[i+1:]...)
+				}
+			}
+			cmd := exec.Command(os.Args[0], args...)
+			cmd.Start()
+			fmt.Fprintf(os.Stdout, "[PID] %d\n", cmd.Process.Pid)
+			os.Exit(0)
+		}
+
 		if content, err := ioutil.ReadFile(pidFile); err == nil {
 			if content, err := ioutil.ReadFile(fmt.Sprintf("/proc/%s/comm", util.Bytes2str(content))); err == nil {
 				if bytes.Contains(content, util.Str2bytes(command)) {
@@ -67,23 +50,12 @@ func main() {
 			}
 		}
 
-		confFile := viper.GetString("config")
-		viper.SetConfigFile(confFile)
-		if err := viper.ReadInConfig(); err != nil {
-			panic(fmt.Errorf("Fatal error config file: %s", err))
-		}
+		conf := agent.InitConfig(confFile)
 
 		ioutil.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0666)
 		defer os.Remove(pidFile)
 
-		if viper.GetBool("cpu") {
-			if f, err := os.Create("./cpu.prof"); err == nil {
-				pprof.StartCPUProfile(f)
-				defer pprof.StopCPUProfile()
-			}
-		}
-
-		a := agent.New(viper.GetViper())
+		a := agent.New(conf)
 		a.Main()
 	}
 
@@ -104,8 +76,6 @@ func main() {
 		os.Remove(pidFile)
 		fmt.Fprintf(os.Stdout, fmt.Sprintf("[stop] successfully\n"))
 	}
-
-	op := viper.GetString("operation")
 
 	switch op {
 	case "start":
