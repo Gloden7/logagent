@@ -16,7 +16,7 @@ import (
 
 func main() {
 	pidFile := "./pid"
-	command := "agent"
+	command := "main"
 
 	var deamon bool
 	var op string

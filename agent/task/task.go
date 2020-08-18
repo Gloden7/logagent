@@ -158,6 +158,8 @@ func (t *Task) initCollector(conf collectorConf) {
 		t.setAPICollector(conf)
 	case "syslog":
 		t.setSyslogCollector(conf)
+	case "file":
+		t.setFileCollector(conf)
 	default:
 		t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
 	}

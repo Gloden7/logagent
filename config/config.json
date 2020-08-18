@@ -8,16 +8,14 @@
 	"tasks": [
 		{
 			"Collector": {
-				"Mode": "syslog",
+				"Mode": "file",
+				"filename": "/data/a.log",
 				"Addr": "127.0.0.1:8000"
-			},
-			"Parser": {
-				"Mode": "jsonify"
 			},
 			"Handlers": [
 				{
 					"Mode": "stream",
-					"Template": "${timestamp}|${url}|${name}"
+					"Template": "${timestamp}|${url}|${name}|${message}"
 				}
 			]
 		}

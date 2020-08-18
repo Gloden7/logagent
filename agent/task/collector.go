@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"logagent/tail"
 	"net"
 	"net/http"
 	"strings"
@@ -140,6 +142,40 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 						t.msgs <- msg
 					}
 				}()
+			}
+		}
+	}
+}
+
+func (t *Task) setFileCollector(conf collectorConf) {
+	tails, err := tail.TailFile(conf.FileName, tail.Config{
+		ReOpen:    !conf.NoReopen,
+		Follow:    true,
+		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
+		MustExist: false,
+	})
+
+	if err != nil {
+		t.logger.Panicf("tailf err %s", err)
+	}
+
+	t.collector = func() {
+		var ok bool
+		var msg *tail.Line
+		for {
+			select {
+			case <-t.ctx.Done():
+				return
+			case msg, ok = <-tails.Lines:
+				if !ok {
+					fmt.Printf("tail file close reopen, filename:%s\n", tails.Filename)
+					time.Sleep(1000 * time.Millisecond)
+					continue
+				}
+				t.msgs <- map[string]interface{}{
+					"message":   msg.Text,
+					"timestamp": msg.Time,
+				}
 			}
 		}
 	}
