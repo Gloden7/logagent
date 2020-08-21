@@ -19,22 +19,23 @@ func parseFacilitySeverity(p []byte) (int, int, error) {
 	return fs >> 3, fs & 0x07, nil
 }
 
-func decode(reader *bufio.Reader, end byte) (map[string]interface{}, error) {
-	priorityBytes, err := reader.ReadBytes('>')
+func decode(reader *bufio.Reader, end byte) (message, error) {
+	// priorityBytes, err := reader.ReadBytes('>')
+	_, err := reader.ReadBytes('>')
 	if err != nil {
 		return nil, err
 	}
-	facility, severity, err := parseFacilitySeverity(priorityBytes[1 : len(priorityBytes)-1])
-	if err != nil {
-		return nil, err
-	}
+	// facility, severity, err := parseFacilitySeverity(priorityBytes[1 : len(priorityBytes)-1])
+	// if err != nil {
+	// 	return nil, err
+	// }
 	msgBytes, err := reader.ReadBytes(end)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{
-		"facility":  facility,
-		"severity":  severity,
+	return message{
+		// "facility":  facility,
+		// "severity":  severity,
 		"timestamp": time.Now(),
 		"message":   util.Bytes2str(msgBytes[:len(msgBytes)-1]),
 	}, nil

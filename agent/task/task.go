@@ -2,10 +2,10 @@ package task
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"logagent/util"
 	"math/rand"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -13,25 +13,25 @@ import (
 	"go.uber.org/zap"
 )
 
-type msg map[string]interface{}
+type message map[string]interface{}
 
 type closer interface {
 	Close() error
 }
 
-type process func(msg map[string]interface{}) map[string]interface{}
+type process func(msg message) (message, error)
 
 // Task 任务结构体
 type Task struct {
 	samplingRate    float64
 	goNum           int
 	degradation     bool
-	logger          *zap.SugaredLogger
-	msgs            chan msg
 	degradationChan chan bool
+	logger          *zap.SugaredLogger
+	msgs            chan message
 	collector       func()
 	processor       process
-	handlers        []func(msg map[string]interface{})
+	handlers        []func(msg message)
 	ctx             context.Context
 	cancel          context.CancelFunc
 	goCancels       []context.CancelFunc
@@ -44,7 +44,7 @@ func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
 	t := &Task{
 		samplingRate: 1,
 		logger:       logger,
-		msgs:         make(chan msg, 100),
+		msgs:         make(chan message, 100),
 		ctx:          ctx,
 		cancel:       cancel,
 		degradation:  degradation && !conf.NoDegradation,
@@ -61,14 +61,21 @@ func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
 	if len(conf.Rewrites) > 0 {
 		t.initRewriters(conf.Rewrites)
 	}
-
+	if len(conf.Validators) > 0 {
+		t.initGlobalValidators(conf.Validators)
+	}
 	t.initHandlers(conf.Handlers)
 
 	return t
 }
 
-// Run task run
+// Run 任务运行
 func (t *Task) Run() {
+	defer func() {
+		if err := recover(); err != nil {
+			t.logger.Errorf("recovered:", err)
+		}
+	}()
 	go t.collector()
 	runFunc := t.getRunFunc()
 	for i := 0; i < t.goNum; i++ {
@@ -85,7 +92,7 @@ func (t *Task) Run() {
 }
 
 func (t *Task) getRunFunc() func(ctx context.Context) {
-	if t.degradation {
+	if t.degradation && t.processor != nil {
 		return func(ctx context.Context) {
 			for {
 				select {
@@ -93,8 +100,50 @@ func (t *Task) getRunFunc() func(ctx context.Context) {
 					if <-t.degradationChan {
 						continue
 					}
-					if t.processor != nil {
-						msg = t.processor(msg)
+					msg, err := t.processor(msg)
+					if err != nil {
+						t.logger.Error(err)
+						if m, err := json.Marshal(msg); err == nil {
+							t.logger.Error(util.Bytes2str(m))
+						}
+						continue
+					}
+					for _, handler := range t.handlers {
+						handler(msg)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+	if t.degradation && t.processor == nil {
+		return func(ctx context.Context) {
+			for {
+				select {
+				case msg := <-t.msgs:
+					if <-t.degradationChan {
+						continue
+					}
+					for _, handler := range t.handlers {
+						handler(msg)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+	if !t.degradation && t.processor != nil {
+		return func(ctx context.Context) {
+			for {
+				select {
+				case msg := <-t.msgs:
+					msg, err := t.processor(msg)
+					if err != nil {
+						m, _ := json.Marshal(msg)
+						t.logger.Errorf("%s, %s", m, err)
+						continue
 					}
 					for _, handler := range t.handlers {
 						handler(msg)
@@ -109,9 +158,6 @@ func (t *Task) getRunFunc() func(ctx context.Context) {
 		for {
 			select {
 			case msg := <-t.msgs:
-				if t.processor != nil {
-					msg = t.processor(msg)
-				}
 				for _, handler := range t.handlers {
 					handler(msg)
 				}
@@ -120,7 +166,6 @@ func (t *Task) getRunFunc() func(ctx context.Context) {
 			}
 		}
 	}
-
 }
 
 func (t *Task) getmsgsSize() int {
@@ -152,19 +197,6 @@ func (t *Task) watchMsgs(runFunc func(ctx context.Context)) {
 	}
 }
 
-func (t *Task) initCollector(conf collectorConf) {
-	switch conf.Mode {
-	case "api":
-		t.setAPICollector(conf)
-	case "syslog":
-		t.setSyslogCollector(conf)
-	case "file":
-		t.setFileCollector(conf)
-	default:
-		t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
-	}
-}
-
 func (t *Task) initParser(conf parserConf) {
 	switch conf.Mode {
 	case "csv":
@@ -176,28 +208,28 @@ func (t *Task) initParser(conf parserConf) {
 		}
 		colsLen := len(conf.Columns)
 		if colsLen == 0 {
-			t.logger.Panic("Please configure columns")
+			t.configureFatal("csv parse", "columns")
 		}
 
-		t.processor = func(msg map[string]interface{}) map[string]interface{} {
+		t.processor = func(msg message) (message, error) {
 			if message, ok := msg["message"].(string); ok {
 				newMsg := strings.SplitN(message, delimiters, colsLen)
 				for i, data := range newMsg {
 					msg[conf.Columns[i]] = data
 				}
 			}
-			return msg
+			return msg, nil
 		}
 	case "regex":
 		if len(conf.Regex) == 0 {
-			t.logger.Panic("Please configure regex")
+			t.configureFatal("regex parse", "regex")
 		}
 		cmp, err := regexp.Compile(conf.Regex)
 		if err != nil {
-			t.logger.Panic("Please configure regex")
+			t.logger.Fatal("invalid configuration `regex`")
 		}
 
-		t.processor = func(msg map[string]interface{}) map[string]interface{} {
+		t.processor = func(msg message) (message, error) {
 			if message, ok := msg["message"].(string); ok {
 				newMsg := cmp.FindStringSubmatch(message)
 				groupNames := cmp.SubexpNames()
@@ -205,20 +237,18 @@ func (t *Task) initParser(conf parserConf) {
 					msg[groupNames[i]] = data
 				}
 			}
-			return msg
+			return msg, nil
 		}
 	case "jsonify":
-		t.processor = func(msg map[string]interface{}) map[string]interface{} {
+		t.processor = func(msg message) (message, error) {
 			if message, ok := msg["message"].(string); ok {
 				err := json.Unmarshal(util.Str2bytes(message), &msg)
-				if err != nil {
-					t.logger.Warn(err)
-				}
+				return msg, err
 			}
-			return msg
+			return msg, nil
 		}
 	default:
-		t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
+		t.logger.Fatalf("unsupported parser mode `%s`", conf.Mode)
 	}
 }
 
@@ -227,94 +257,121 @@ func (t *Task) initRewriters(rewritersConf []rewriterConf) {
 		switch conf.Mode {
 		case "set":
 			if len(conf.Column) == 0 {
-				return
+				t.configureFatal("set rewrite", "column")
 			}
-			t.setprocessor(func(msg map[string]interface{}) map[string]interface{} {
+			t.setProcessor(func(msg message) (message, error) {
 				msg[conf.Column] = conf.Value
-				return msg
+				return msg, nil
 			})
 		case "subst":
-			if len(conf.Column) == 0 || len(conf.Old) == 0 {
-				return
+			if len(conf.Column) == 0 {
+				t.configureFatal("subst rewrite", "column")
 			}
-			t.setprocessor(func(msg map[string]interface{}) map[string]interface{} {
+			if len(conf.Old) == 0 {
+				t.configureFatal("subst rewrite", "old")
+			}
+			t.setProcessor(func(msg message) (message, error) {
 				key, ok := msg[conf.Column].(string)
 				if !ok {
-					return msg
+					return msg, nil
 				}
 				msg[conf.Column] = strings.Replace(key, conf.Old, conf.Value, -1)
-				return msg
+				return msg, nil
 			})
 		case "mapping":
-			t.setprocessor(func(msg map[string]interface{}) map[string]interface{} {
+			if len(conf.Column) == 0 {
+				t.configureFatal("mapping rewrite", "column")
+			}
+			if conf.Mapping == nil {
+				t.configureFatal("mapping rewrite", "mapping")
+			}
+			t.setProcessor(func(msg message) (message, error) {
 				key, ok := msg[conf.Column].(string)
 				if !ok {
-					return msg
+					return msg, nil
 				}
 				value, ok := conf.Mapping[key]
 				if !ok {
-					return msg
+					return msg, fmt.Errorf("mapping rewriter column %s not found", key)
 				}
 				msg[conf.Column] = value
-				return msg
+				return msg, nil
 			})
 		case "jsonify":
 			if len(conf.Column) == 0 {
-				return
+				t.configureFatal("jsonify rewrite", "column")
 			}
-			t.setprocessor(func(msg map[string]interface{}) map[string]interface{} {
+			t.setProcessor(func(msg message) (message, error) {
 				jsonStr, ok := msg[conf.Column].(string)
 				if !ok {
-					return msg
+					return msg, nil
 				}
-
-				tempMap := make(map[string]interface{})
+				tempMap := make(message)
 				err := json.Unmarshal(util.Str2bytes(jsonStr), &tempMap)
 				if err != nil {
-					t.logger.Warn(err)
-					return msg
+					return msg, err
 				}
 				for k, v := range tempMap {
 					msg[fmt.Sprintf("%s_%s", conf.Column, k)] = v
 				}
-				return msg
+				return msg, nil
+			})
+		case "command":
+			if len(conf.Column) == 0 {
+				t.configureFatal("command rewrite", "column")
+			}
+			if len(conf.Command) == 0 {
+				t.configureFatal("subst rewrite", "command")
+			}
+			t.setProcessor(func(msg message) (message, error) {
+				cmd := exec.Command(conf.Command)
+				out, err := cmd.Output()
+				if err != nil {
+					return msg, err
+				}
+				msg[conf.Column] = util.Bytes2str(out)
+				return msg, nil
+			})
+		case "splicing":
+			if len(conf.Columns) == 0 {
+				t.configureFatal("splicing rewrite", "column")
+			}
+			if len(conf.Key) == 0 {
+				t.configureFatal("splicing rewrite", "key")
+			}
+			if len(conf.Delimiters) == 0 {
+				conf.Delimiters = " "
+			}
+			t.setProcessor(func(msg message) (message, error) {
+				values := []string{}
+				for _, k := range conf.Columns {
+					if v, ok := msg[k].(string); ok {
+						values = append(values, v)
+					}
+				}
+				msg[conf.Key] = strings.Join(values, conf.Delimiters)
+				return msg, nil
 			})
 		default:
-			t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
+			t.logger.Fatalf("unsupported rewriter mode `%s`", conf.Mode)
 		}
 	}
 }
 
-func (t *Task) setprocessor(p process) {
+func (t *Task) setProcessor(p process) {
 	if &t.processor != nil {
 		func(processor process) {
-			t.processor = func(msg map[string]interface{}) map[string]interface{} {
-				msg = processor(msg)
+			t.processor = func(msg message) (message, error) {
+				msg, err := processor(msg)
+				if err != nil {
+					return msg, err
+				}
 				return p(msg)
 			}
 		}(t.processor)
 	} else {
 		t.processor = p
 	}
-}
-
-func (t *Task) initHandlers(handlesConf []handlerConf) {
-	for _, conf := range handlesConf {
-		switch conf.Mode {
-		case "stream":
-			t.addStreamHandler(conf)
-		case "file":
-			t.addFileHandler(conf)
-		case "database":
-			t.addDBHandler(conf)
-		default:
-			t.logger.Panicf("Unsupported mode `%s`", conf.Mode)
-		}
-	}
-}
-
-func (t *Task) addHandle(handler func(msg map[string]interface{})) {
-	t.handlers = append(t.handlers, handler)
 }
 
 func (t *Task) addCloser(c closer) {
@@ -349,4 +406,8 @@ func (t *Task) genDegradationRate() {
 			t.degradationChan <- (rand.Float64() > t.samplingRate)
 		}
 	}
+}
+
+func (t *Task) configureFatal(model, confItem string) {
+	t.logger.Fatalf("%s requires `%s` configuration.", model, confItem)
 }

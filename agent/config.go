@@ -1,11 +1,15 @@
 package agent
 
 import (
-	"encoding/json"
 	"io/ioutil"
+	"log"
 	"logagent/agent/task"
 	"logagent/logging"
+
+	jsoniter "github.com/json-iterator/go"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // Conf agent配置结构体
 type Conf struct {
@@ -20,14 +24,14 @@ func InitConfig(confFile string) *Conf {
 	content, err := ioutil.ReadFile(confFile)
 
 	if err != nil {
-		panic("invalid config file")
+		log.Fatal("invalid config file")
 	}
 
 	conf := &Conf{}
 	err = json.Unmarshal(content, conf)
 
 	if err != nil {
-		panic("invalid config file")
+		log.Fatal("invalid config file")
 	}
 
 	return conf

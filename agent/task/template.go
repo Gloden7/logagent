@@ -7,8 +7,8 @@ import (
 
 var cmp = regexp.MustCompile("\\$\\{.*?\\}")
 
-func getTemplateFunc(template string) func(msg map[string]interface{}) (text string) {
-	return func(msg map[string]interface{}) (text string) {
+func getTemplateFunc(template string) func(msg message) (text string) {
+	return func(msg message) (text string) {
 		text = cmp.ReplaceAllStringFunc(template, func(old string) string {
 			key := strings.Trim(old, "${}")
 			new, ok := msg[key].(string)

@@ -1,9 +1,0 @@
-2020-08-10T10:56:32.271+0800	FATAL	agent/agent.go:34	error
-2020-08-10T10:57:04.359+0800	FATAL	agent/agent.go:34	error
-2020-08-10T10:58:51.877+0800	FATAL	agent/agent.go:34	error
-2020-08-10T11:01:03.785+0800	FATAL	agent/agent.go:34	error
-2020-08-10T11:15:46.552+0800	FATAL	agent/agent.go:37	error
-2020-08-10T11:16:08.979+0800	FATAL	agent/agent.go:37	error
-2020-08-10T14:57:51.579+0800	PANIC	agent/task.go:47	Unsupported mode `network`
-2020-08-11T14:44:00.079+0800	PANIC	task/task.go:301	listen: unknown network 
-2020-08-12T11:10:57.518+0800	INFO	agent/agent.go:42	task %s startc5c5caf6-6b2d-4848-b58e-dd7208b2e5f8

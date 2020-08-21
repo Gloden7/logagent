@@ -11,9 +11,11 @@ import (
 	"github.com/natefinch/lumberjack"
 )
 
-func (t *Task) addFileHandler(conf handlerConf) {
+type handler func(msg message)
+
+func (t *Task) newFileHandler(conf handlerConf) handler {
 	if len(conf.FileName) == 0 {
-		t.logger.Panic("File configuration `path` cannot be empty")
+		t.configureFatal("file handle", "filename")
 	}
 
 	var maxSize int
@@ -37,25 +39,25 @@ func (t *Task) addFileHandler(conf handlerConf) {
 	}
 	templateFunc := getTemplateFunc(conf.Template)
 
-	t.addHandle(func(msg map[string]interface{}) {
+	return func(msg message) {
 		text := templateFunc(msg)
 		_, err := f.Write(util.Str2bytes(text))
 		if err != nil {
-			t.logger.Warn(err)
+			t.logger.Error(err)
 		}
-	})
+	}
 }
 
-func (t *Task) addDBHandler(conf handlerConf) {
+func (t *Task) newDBHandler(conf handlerConf) handler {
 	if len(conf.Table) == 0 {
-		t.logger.Panic("Database configuration `table` cannot be empty")
+		t.configureFatal("database handle", "table")
 	}
 	if len(conf.Columns) == 0 {
-		t.logger.Panic("Database configuration `columns` cannot be empty")
+		t.configureFatal("database handle", "columns")
 	}
 	if len(conf.Fields) != 0 {
 		if len(conf.Fields) != len(conf.Columns) {
-			t.logger.Panic("Columns fields have different lengths")
+			t.logger.Fatal("invalid `fields` configuration")
 		}
 	}
 
@@ -68,7 +70,7 @@ func (t *Task) addDBHandler(conf handlerConf) {
 
 	temp := strings.SplitN(conf.URI, ":", 2)
 	if len(temp) < 2 {
-		t.logger.Panic("Bad database URI")
+		t.logger.Fatal("bad database URI")
 	}
 	dn := temp[0]
 	dsn := strings.TrimLeft(temp[1], "/")
@@ -84,7 +86,7 @@ func (t *Task) addDBHandler(conf handlerConf) {
 		i := strings.IndexByte(dsn, '@') + 1
 		j := strings.IndexByte(dsn, '/')
 		if i == 0 || j == -1 {
-			t.logger.Panic("Bad database URI")
+			t.logger.Fatal("bad database URI")
 		}
 		dsn = dsn[:i] + "tcp(" + dsn[i:j] + ")" + dsn[j:]
 	}
@@ -93,7 +95,7 @@ func (t *Task) addDBHandler(conf handlerConf) {
 	go func() {
 		select {
 		case <-ctx.Done():
-			t.logger.Panic("Database connection timed out")
+			t.logger.Fatal("database connection timed out")
 		case <-dbInit:
 			break
 		}
@@ -109,37 +111,74 @@ func (t *Task) addDBHandler(conf handlerConf) {
 	if len(conf.Fields) > 0 {
 		err = createTable(database, dn, conf.Table, conf.Fields)
 		if err != nil {
-			t.logger.Panic(err)
+			t.logger.Fatal(err)
 		}
 	}
 	sql := genInsertSQL(dn, conf.Table, conf.Columns)
 	stmt, err := database.Prepare(sql)
 	if err != nil {
-		t.logger.Panic(err)
+		t.logger.Fatal(err)
 	}
 	t.addCloser(stmt)
 
 	sortFunc := genSortFunc(conf.Columns)
 
-	t.addHandle(func(msg map[string]interface{}) {
+	return func(msg message) {
 		insertData := sortFunc(msg)
 		_, err = stmt.Exec(insertData...)
 		if err != nil {
-			t.logger.Warn(err)
+			t.logger.Error(err)
 		}
-	})
+	}
 }
 
-func (t *Task) addStreamHandler(conf handlerConf) {
+func (t *Task) newStreamHandler(conf handlerConf) handler {
 	if len(conf.Template) == 0 {
 		conf.Template = "${MESSAGE}"
 	}
 
 	templateFunc := getTemplateFunc(conf.Template)
-	t.addHandle(func(msg map[string]interface{}) {
+	return func(msg message) {
 		_, err := fmt.Fprint(os.Stdout, templateFunc(msg))
 		if err != nil {
-			t.logger.Warn(err)
+			t.logger.Error(err)
 		}
-	})
+	}
+}
+
+func (t *Task) addHandle(handler func(msg message)) {
+	t.handlers = append(t.handlers, handler)
+}
+
+func (t *Task) initHandler(conf handlerConf) handler {
+	switch conf.Mode {
+	case "stream":
+		return t.newStreamHandler(conf)
+	case "file":
+		return t.newFileHandler(conf)
+	case "database":
+		return t.newDBHandler(conf)
+	default:
+		t.logger.Fatalf("unsupported handle mode `%s`", conf.Mode)
+		return nil
+	}
+}
+
+func (t *Task) initHandlers(handlesConf []handlerConf) {
+	for _, conf := range handlesConf {
+		vs := t.initValidators(conf.Validators)
+		h := t.initHandler(conf)
+		if len(vs) > 0 {
+			t.addHandle(func(msg message) {
+				for _, v := range vs {
+					if err := v(msg); err != nil {
+						return
+					}
+				}
+				h(msg)
+			})
+		} else {
+			t.addHandle(h)
+		}
+	}
 }

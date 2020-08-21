@@ -3,7 +3,6 @@ package task
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"logagent/tail"
@@ -11,7 +10,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func (t *Task) setAPICollector(conf collectorConf) {
 	var url string
@@ -28,7 +31,7 @@ func (t *Task) setAPICollector(conf collectorConf) {
 
 	serverMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
-			data := map[string]interface{}{
+			data := message{
 				"timestamp": time.Now(),
 			}
 			decode := json.NewDecoder(r.Body)
@@ -76,7 +79,7 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 	if strings.Contains(conf.Protocol, "udp") {
 		listener, err := net.ListenPacket("udp", conf.Addr)
 		if err != nil {
-			t.logger.Panic(err)
+			t.logger.Fatal(err)
 		}
 		defer listener.Close()
 
@@ -108,7 +111,7 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 
 	listener, err := net.Listen("tcp", conf.Addr)
 	if err != nil {
-		t.logger.Panic(err)
+		t.logger.Fatal(err)
 	}
 
 	t.collector = func() {
@@ -156,7 +159,7 @@ func (t *Task) setFileCollector(conf collectorConf) {
 	})
 
 	if err != nil {
-		t.logger.Panicf("tailf err %s", err)
+		t.logger.Fatalf("tailf err %s", err)
 	}
 
 	t.collector = func() {
@@ -172,11 +175,24 @@ func (t *Task) setFileCollector(conf collectorConf) {
 					time.Sleep(1000 * time.Millisecond)
 					continue
 				}
-				t.msgs <- map[string]interface{}{
+				t.msgs <- message{
 					"message":   msg.Text,
 					"timestamp": msg.Time,
 				}
 			}
 		}
+	}
+}
+
+func (t *Task) initCollector(conf collectorConf) {
+	switch conf.Mode {
+	case "api":
+		t.setAPICollector(conf)
+	case "syslog":
+		t.setSyslogCollector(conf)
+	case "file":
+		t.setFileCollector(conf)
+	default:
+		t.logger.Fatalf("unsupported collector mode `%s`", conf.Mode)
 	}
 }

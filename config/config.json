@@ -8,14 +8,41 @@
 	"tasks": [
 		{
 			"Collector": {
-				"Mode": "file",
-				"filename": "/data/a.log",
+				"Mode": "syslog",
 				"Addr": "127.0.0.1:8000"
+			},
+			"parser": {
+				"Mode": "csv",
+				"delimiters": "|",
+				"columns": [
+					"name",
+					"levelname",
+					"asctime",
+					"message"
+				]
 			},
 			"Handlers": [
 				{
 					"Mode": "stream",
-					"Template": "${timestamp}|${url}|${name}|${message}"
+					"Template": "h1: ${asctime}|${levelname}|${name}|${message}",
+					"validators": [
+						{
+							"Mode": "minlength",
+							"column": "message",
+							"number": 9
+						}
+					]
+				},
+				{
+					"Mode": "stream",
+					"Template": "h2: ${levelname}|${asctime}|${name}|${message}",
+					"validators": [
+						{
+							"Mode": "minlength",
+							"column": "message",
+							"number": 12
+						}
+					]
 				}
 			]
 		}

@@ -79,8 +79,8 @@ func genInsertSQL(dn string, tableName string, columns []string) string {
 		b.String(), sql)
 }
 
-func genSortFunc(columns []string) func(data map[string]interface{}) []interface{} {
-	return func(data map[string]interface{}) []interface{} {
+func genSortFunc(columns []string) func(data message) []interface{} {
+	return func(data message) []interface{} {
 		var insertData []interface{}
 		for _, k := range columns {
 			if x, ok := data[k]; ok {
