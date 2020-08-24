@@ -58,11 +58,11 @@ func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
 	if len(conf.Parser.Mode) > 0 {
 		t.initParser(conf.Parser)
 	}
-	if len(conf.Rewrites) > 0 {
-		t.initRewriters(conf.Rewrites)
-	}
 	if len(conf.Validators) > 0 {
 		t.initGlobalValidators(conf.Validators)
+	}
+	if len(conf.Rewrites) > 0 {
+		t.initRewriters(conf.Rewrites)
 	}
 	t.initHandlers(conf.Handlers)
 
