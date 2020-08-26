@@ -3,6 +3,7 @@ module logagent
 go 1.14
 
 require (
+	github.com/Shopify/sarama v1.27.0
 	github.com/blusewang/pg v0.0.0-20200609084017-b24513b3bab1
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/hpcloud/tail v1.0.0

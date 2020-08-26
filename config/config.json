@@ -9,40 +9,12 @@
 		{
 			"Collector": {
 				"Mode": "syslog",
-				"Addr": "127.0.0.1:8000"
-			},
-			"parser": {
-				"Mode": "csv",
-				"delimiters": "|",
-				"columns": [
-					"name",
-					"levelname",
-					"asctime",
-					"message"
-				]
+				"Addr": "127.0.0.1:8000",
+				"protocol": "udp"
 			},
 			"Handlers": [
 				{
-					"Mode": "stream",
-					"Template": "h1: ${asctime}|${levelname}|${name}|${message}",
-					"validators": [
-						{
-							"Mode": "minlength",
-							"column": "message",
-							"number": 9
-						}
-					]
-				},
-				{
-					"Mode": "stream",
-					"Template": "h2: ${levelname}|${asctime}|${name}|${message}",
-					"validators": [
-						{
-							"Mode": "minlength",
-							"column": "message",
-							"number": 12
-						}
-					]
+					"Mode": "stream"
 				}
 			]
 		}

@@ -3,10 +3,12 @@ package task
 import (
 	"context"
 	"fmt"
-	"logagent/util"
+	"logagent/kafka"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Shopify/sarama"
 
 	"github.com/natefinch/lumberjack"
 )
@@ -34,14 +36,11 @@ func (t *Task) newFileHandler(conf handlerConf) handler {
 	}
 	t.addCloser(f)
 
-	if len(conf.Template) == 0 {
-		conf.Template = "${MESSAGE}"
-	}
 	templateFunc := getTemplateFunc(conf.Template)
 
 	return func(msg message) {
 		text := templateFunc(msg)
-		_, err := f.Write(util.Str2bytes(text))
+		_, err := fmt.Fprintln(f, text)
 		if err != nil {
 			t.logger.Error(err)
 		}
@@ -133,13 +132,49 @@ func (t *Task) newDBHandler(conf handlerConf) handler {
 }
 
 func (t *Task) newStreamHandler(conf handlerConf) handler {
-	if len(conf.Template) == 0 {
-		conf.Template = "${MESSAGE}"
+	templateFunc := getTemplateFunc(conf.Template)
+	return func(msg message) {
+		_, err := fmt.Fprintln(os.Stdout, templateFunc(msg))
+		if err != nil {
+			t.logger.Error(err)
+		}
+	}
+}
+
+func (t *Task) newKafkaHandle(conf handlerConf) handler {
+	if len(conf.Addrs) == 0 {
+		t.configureFatal("kafka handler", "addrs")
+	}
+
+	var timeout time.Duration
+	if conf.Timeout > 0 {
+		timeout = time.Second * time.Duration(conf.Timeout)
+	} else {
+		timeout = time.Second * 10
+	}
+
+	p, err := kafka.Producer(conf.RequiredAcks, conf.Addrs, timeout)
+
+	if err != nil {
+		t.logger.Fatal(err)
+	}
+	t.addCloser(p)
+
+	var topic string
+	if len(conf.Topic) > 0 {
+		topic = conf.Topic
+	} else {
+		topic = "log_agent"
 	}
 
 	templateFunc := getTemplateFunc(conf.Template)
+
 	return func(msg message) {
-		_, err := fmt.Fprint(os.Stdout, templateFunc(msg))
+		text := templateFunc(msg)
+		kafkaMsg := &sarama.ProducerMessage{}
+		kafkaMsg.Topic = topic
+		kafkaMsg.Value = sarama.ByteEncoder(text)
+		_, _, err := p.SendMessage(kafkaMsg)
 		if err != nil {
 			t.logger.Error(err)
 		}
@@ -158,6 +193,8 @@ func (t *Task) initHandler(conf handlerConf) handler {
 		return t.newFileHandler(conf)
 	case "database":
 		return t.newDBHandler(conf)
+	case "kafka":
+		return t.newKafkaHandle(conf)
 	default:
 		t.logger.Fatalf("unsupported handle mode `%s`", conf.Mode)
 		return nil

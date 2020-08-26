@@ -11,6 +11,9 @@ type collectorConf struct {
 	// api syslog
 	Protocol string
 	Addr     string `json:",omitempty"`
+	// kafka
+	Topic string   `json:",omitempty"`
+	Addrs []string `json:",omitempty"`
 
 	End string
 }
@@ -61,6 +64,10 @@ type handlerConf struct {
 	Table   string   `json:",omitempty"`
 	Columns []string `json:",omitempty"`
 	Fields  []string `json:",omitempty"`
+	// kafka
+	Topic        string   `json:",omitempty"`
+	Addrs        []string `json:",omitempty"`
+	RequiredAcks int
 
 	Validators []validatorConf `json:",omitempty"`
 }

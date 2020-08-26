@@ -5,12 +5,17 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"logagent/kafka"
 	"logagent/tail"
+	"logagent/util"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Shopify/sarama"
 	jsoniter "github.com/json-iterator/go"
 )
 
@@ -81,10 +86,11 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 		if err != nil {
 			t.logger.Fatal(err)
 		}
-		defer listener.Close()
+		t.addCloser(listener)
+		fmt.Println(end)
 
 		t.collector = func() {
-			t.logger.Infof("%s server start udp@%s", conf.Addr)
+			t.logger.Infof("syslog server start udp@%s", conf.Addr)
 			for {
 				select {
 				case <-t.ctx.Done():
@@ -113,6 +119,7 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 	if err != nil {
 		t.logger.Fatal(err)
 	}
+	t.addCloser(listener)
 
 	t.collector = func() {
 		t.logger.Infof("syslog server start tcp@%s", conf.Addr)
@@ -184,6 +191,73 @@ func (t *Task) setFileCollector(conf collectorConf) {
 	}
 }
 
+func (t *Task) setKafkaCollector(conf collectorConf) {
+	if len(conf.Addrs) == 0 {
+		t.configureFatal("kafka collector", "addrs")
+	}
+	var timeout time.Duration
+	if conf.Timeout > 0 {
+		timeout = time.Second * time.Duration(conf.Timeout)
+	} else {
+		timeout = time.Second * 10
+	}
+
+	c, err := kafka.Consumer(conf.Addrs, timeout)
+
+	if err != nil {
+		t.logger.Fatal(err)
+	}
+	defer c.Close()
+
+	pl, err := c.Partitions(conf.Topic)
+	if err != nil {
+		t.logger.Fatal(err)
+	}
+
+	var offset int64
+	offsetContent, err := ioutil.ReadFile("./offset")
+	if err == nil {
+		off, err := strconv.Atoi(util.Bytes2str(offsetContent))
+		if err != nil {
+			t.logger.Fatal(err)
+		}
+		offset = int64(off)
+	} else {
+		offset = sarama.OffsetNewest
+	}
+
+	t.collector = func() {
+		for _, partition := range pl {
+			//ConsumePartition方法根据主题，分区和给定的偏移量创建创建了相应的分区消费者
+			//如果该分区消费者已经消费了该信息将会返回error
+			//sarama.OffsetNewest:表明了为最新消息
+			pc, err := c.ConsumePartition(conf.Topic, int32(partition), offset)
+			if err != nil {
+				t.logger.Fatal(err)
+			}
+			t.addCloser(pc)
+
+			kafkaMsg := pc.Messages()
+			var msg *sarama.ConsumerMessage
+			for {
+				select {
+				case <-t.ctx.Done():
+					if msg != nil {
+						ioutil.WriteFile("./offset", []byte(fmt.Sprintf("%d", msg.Offset+1)), 0666)
+					}
+					return
+				case msg = <-kafkaMsg:
+					//Messages()该方法返回一个消费消息类型的只读通道，由代理产生
+					t.msgs <- map[string]interface{}{
+						"message":   msg.Value,
+						"timestamp": time.Now(),
+					}
+				}
+			}
+		}
+	}
+}
+
 func (t *Task) initCollector(conf collectorConf) {
 	switch conf.Mode {
 	case "api":
@@ -192,6 +266,8 @@ func (t *Task) initCollector(conf collectorConf) {
 		t.setSyslogCollector(conf)
 	case "file":
 		t.setFileCollector(conf)
+	case "kafka":
+		t.setKafkaCollector(conf)
 	default:
 		t.logger.Fatalf("unsupported collector mode `%s`", conf.Mode)
 	}
