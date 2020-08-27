@@ -8,6 +8,7 @@ import (
 	"logagent/agent"
 	"logagent/util"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"syscall"
 
@@ -21,10 +22,12 @@ func main() {
 	var deamon bool
 	var op string
 	var confFile string
+	var cpu int
 
 	flag.StringVar(&confFile, "f", "../../config/config.json", "指定`logagent`配置文件")
 	flag.BoolVar(&deamon, "deamon", false, "以守护进程方式运行")
 	flag.StringVar(&op, "opt", "start", "指定`logagent`操作start,restart,stop")
+	flag.IntVar(&cpu, "cpu", 0, "指定`logagent`运行在多少个物理线程上")
 	flag.Parse()
 
 	start := func() {
@@ -40,6 +43,12 @@ func main() {
 			fmt.Fprintf(os.Stdout, "[PID] %d\n", cmd.Process.Pid)
 			os.Exit(0)
 		}
+		if cpu == 0 && runtime.NumCPU() > 5 {
+			cpu = runtime.NumCPU() / 5
+		} else {
+			cpu = 1
+		}
+		runtime.GOMAXPROCS(cpu)
 
 		if content, err := ioutil.ReadFile(pidFile); err == nil {
 			if content, err := ioutil.ReadFile(fmt.Sprintf("/proc/%s/comm", util.Bytes2str(content))); err == nil {
