@@ -23,6 +23,8 @@ func initDatabase(driverName, dsn string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxIdleConns(10)
+	db.SetMaxOpenConns(10)
 	return db, nil
 }
 

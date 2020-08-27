@@ -88,7 +88,6 @@ func (t *Task) Run() {
 		go t.genDegradationRate()
 	}
 	runFunc(t.ctx)
-	t.Close()
 }
 
 func (t *Task) getRunFunc() func(ctx context.Context) {
@@ -384,9 +383,11 @@ func (t *Task) Close() error {
 		cancel()
 	}
 	t.cancel()
-
+	time.Sleep(time.Millisecond * 500)
 	for _, closer := range t.closers {
-		closer.Close()
+		if err := closer.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

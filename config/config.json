@@ -13,35 +13,10 @@
 			},
 			"Handlers": [
 				{
-					"Mode": "kafka",
+					"Mode": "stream",
 					"Topic": "protection",
 					"Addrs": ["10.50.36.215:9092"],
 					"RequiredAcks": -1
-				}
-			]
-		},
-		{
-			"Collector": {
-				"Mode": "kafka",
-				"Addrs": ["10.50.36.215:9092"],
-				"Topic": "protection"
-			},
-			"Parser": {
-				"Mode": "jsonify"
-			},
-			"Handlers": [
-				{
-					"Mode": "database",
-					"URI": "postgresql://postgres:waftest@10.20.136.14:5432/protection",
-					"Table": "signatures",
-					"columns": ["timestamp", "severity", "txn_id", "device_id", "app_id", "dst_ip", "dst_port", 
-						"src_ip", "src_port", "url", "method", "host", "rule_id", "category"]
-				},
-				{
-					"Mode": "database",
-					"URI": "postgresql://postgres:waftest@10.20.136.14:5432/protection",
-					"Table": "protection_detail",
-					"columns": ["txn_id", "req_headers", "req_body", "res_headers", "res_body"]
 				}
 			]
 		}
