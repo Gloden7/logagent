@@ -8,20 +8,6 @@
 	"tasks": [
 		{
 			"Collector": {
-				"Mode": "syslog",
-				"Addr": "127.0.0.1:8000"
-			},
-			"Handlers": [
-				{
-					"Mode": "kafka",
-					"Topic": "protection",
-					"Addrs": ["10.50.36.215:9092"],
-					"RequiredAcks": -1
-				}
-			]
-		},
-		{
-			"Collector": {
 				"Mode": "kafka",
 				"Addrs": ["10.50.36.215:9092"],
 				"Topic": "protection"

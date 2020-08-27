@@ -86,10 +86,9 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 		if err != nil {
 			t.logger.Fatal(err)
 		}
-		t.addCloser(listener)
-		fmt.Println(end)
 
 		t.collector = func() {
+			defer listener.Close()
 			t.logger.Infof("syslog server start udp@%s", conf.Addr)
 			for {
 				select {
@@ -119,9 +118,9 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 	if err != nil {
 		t.logger.Fatal(err)
 	}
-	t.addCloser(listener)
 
 	t.collector = func() {
+		defer listener.Close()
 		t.logger.Infof("syslog server start tcp@%s", conf.Addr)
 		for {
 			select {
@@ -207,7 +206,6 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 	if err != nil {
 		t.logger.Fatal(err)
 	}
-	defer c.Close()
 
 	pl, err := c.Partitions(conf.Topic)
 	if err != nil {
@@ -215,8 +213,7 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 	}
 
 	var offset int64
-	offsetContent, err := ioutil.ReadFile("./offset")
-	if err == nil {
+	if offsetContent, err := ioutil.ReadFile("./offset"); err == nil {
 		off, err := strconv.Atoi(util.Bytes2str(offsetContent))
 		if err != nil {
 			t.logger.Fatal(err)
@@ -227,6 +224,7 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 	}
 
 	t.collector = func() {
+		// defer c.Close()
 		for _, partition := range pl {
 			//ConsumePartition方法根据主题，分区和给定的偏移量创建创建了相应的分区消费者
 			//如果该分区消费者已经消费了该信息将会返回error
@@ -235,7 +233,7 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 			if err != nil {
 				t.logger.Fatal(err)
 			}
-			t.addCloser(pc)
+			// t.addCloser(pc)
 
 			kafkaMsg := pc.Messages()
 			var msg *sarama.ConsumerMessage
@@ -249,7 +247,7 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 				case msg = <-kafkaMsg:
 					//Messages()该方法返回一个消费消息类型的只读通道，由代理产生
 					t.msgs <- map[string]interface{}{
-						"message":   msg.Value,
+						"message":   util.Bytes2str(msg.Value),
 						"timestamp": time.Now(),
 					}
 				}

@@ -123,7 +123,9 @@ func (t *Task) newDBHandler(conf handlerConf) handler {
 	sortFunc := genSortFunc(conf.Columns)
 
 	return func(msg message) {
+		// fmt.Println(msg["timestamp"])
 		insertData := sortFunc(msg)
+		fmt.Println(insertData)
 		_, err = stmt.Exec(insertData...)
 		if err != nil {
 			t.logger.Error(err)
@@ -158,7 +160,6 @@ func (t *Task) newKafkaHandle(conf handlerConf) handler {
 	if err != nil {
 		t.logger.Fatal(err)
 	}
-	t.addCloser(p)
 
 	var topic string
 	if len(conf.Topic) > 0 {
