@@ -93,7 +93,7 @@ func (a *Agent) watchCPUUsage() {
 }
 
 func getDeviceID() string {
-	cmd := exec.Command("dmidecode -s system-uuid'")
+	cmd := exec.Command("dmidecode", "-s", "system-uuid")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

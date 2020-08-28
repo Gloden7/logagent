@@ -42,7 +42,8 @@ func (t *Task) setAPICollector(conf collectorConf) {
 	serverMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			data := message{
-				"timestamp": time.Now().Format(time.RFC3339),
+				"device_id": t.deviceID,
+				"timestamp": time.Now(),
 			}
 			decode := json.NewDecoder(r.Body)
 			err := decode.Decode(&data)
