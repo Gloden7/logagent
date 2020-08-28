@@ -74,7 +74,7 @@ func genInsertSQL(dn string, tableName string, columns []string) string {
 	b.WriteString(strings.ToLower(columns[0]))
 	for _, s := range columns[1:] {
 		b.WriteByte(',')
-		b.WriteString(strings.ToLower(s))
+		b.WriteString(fmt.Sprintf("%s", strings.ToLower(s)))
 	}
 
 	return fmt.Sprintf("INSERT INTO %s(%s)values(%s)", tableName,

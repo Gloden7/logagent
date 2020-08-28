@@ -107,6 +107,7 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 						t.logger.Warn(err)
 						continue
 					}
+					msg["device_id"] = t.deviceID
 					t.msgs <- msg
 				}
 			}
@@ -184,6 +185,7 @@ func (t *Task) setFileCollector(conf collectorConf) {
 				t.msgs <- message{
 					"message":   msg.Text,
 					"timestamp": msg.Time,
+					"device_id": t.deviceID,
 				}
 			}
 		}
@@ -249,11 +251,17 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 					t.msgs <- map[string]interface{}{
 						"message":   util.Bytes2str(msg.Value),
 						"timestamp": time.Now(),
+						"device_id": t.deviceID,
 					}
 				}
 			}
 		}
 	}
+}
+
+func (t *Task) setDirCollector(conf collectorConf) {
+	
+
 }
 
 func (t *Task) initCollector(conf collectorConf) {
@@ -266,6 +274,8 @@ func (t *Task) initCollector(conf collectorConf) {
 		t.setFileCollector(conf)
 	case "kafka":
 		t.setKafkaCollector(conf)
+	case "dir":
+		t.setDirCollector(conf)
 	default:
 		t.logger.Fatalf("unsupported collector mode `%s`", conf.Mode)
 	}

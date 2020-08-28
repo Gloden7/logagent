@@ -5,6 +5,7 @@ import (
 	"logagent/logging"
 	"logagent/util"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -38,13 +39,13 @@ func New(conf *Conf) *Agent {
 
 // Main 主函数
 func (a *Agent) Main() {
-
-	d := a.cpuLimit > 0
+	deviceID := getDeviceID()
+	isLimit := a.cpuLimit > 0
 	for _, conf := range a.conf {
-		t := task.New(a.logger, conf, d)
+		t := task.New(a.logger, conf, isLimit, deviceID)
 		a.addTask(t)
 	}
-	if d {
+	if isLimit {
 		go a.watchCPUUsage()
 	}
 
@@ -89,4 +90,13 @@ func (a *Agent) watchCPUUsage() {
 			}
 		}
 	}
+}
+
+func getDeviceID() string {
+	cmd := exec.Command("dmidecode -s system-uuid'")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return util.Bytes2str(out)
 }

@@ -36,10 +36,11 @@ type Task struct {
 	cancel          context.CancelFunc
 	goCancels       []context.CancelFunc
 	closers         []closer
+	deviceID        string
 }
 
 // New 创建一个任务对象
-func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
+func New(logger *zap.SugaredLogger, conf *Conf, degradation bool, deviceID string) *Task {
 	ctx, cancel := context.WithCancel(context.Background())
 	t := &Task{
 		samplingRate: 1,
@@ -48,6 +49,7 @@ func New(logger *zap.SugaredLogger, conf *Conf, degradation bool) *Task {
 		ctx:          ctx,
 		cancel:       cancel,
 		degradation:  degradation && !conf.NoDegradation,
+		deviceID:     deviceID,
 	}
 	t.initCollector(conf.Collector)
 
