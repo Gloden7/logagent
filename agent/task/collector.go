@@ -34,9 +34,13 @@ func (t *Task) setAPICollector(conf collectorConf) {
 
 	serverMux := http.NewServeMux()
 
-	res, _ := json.Marshal(map[string]interface{}{
+	yes, _ := json.Marshal(map[string]interface{}{
 		"code":    0,
-		"message": "successfuly",
+		"message": "successfully",
+	})
+	no, _ := json.Marshal(map[string]interface{}{
+		"code":    1,
+		"message": "bad request format",
 	})
 
 	serverMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
@@ -48,16 +52,16 @@ func (t *Task) setAPICollector(conf collectorConf) {
 			decode := json.NewDecoder(r.Body)
 			err := decode.Decode(&data)
 
+			w.Header().Set("Content-Type", "application/json")
 			if err != nil {
 				t.logger.Warn(err)
 				w.WriteHeader(400)
+				w.Write(no)
 				return
 			}
-
 			t.msgs <- data
 			w.WriteHeader(201)
-
-			w.Write(res)
+			w.Write(yes)
 		}
 	})
 
