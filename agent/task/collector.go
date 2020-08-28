@@ -34,10 +34,15 @@ func (t *Task) setAPICollector(conf collectorConf) {
 
 	serverMux := http.NewServeMux()
 
+	res, _ := json.Marshal(map[string]interface{}{
+		"code":    0,
+		"message": "successfuly",
+	})
+
 	serverMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			data := message{
-				"timestamp": time.Now(),
+				"timestamp": time.Now().Format(time.RFC3339),
 			}
 			decode := json.NewDecoder(r.Body)
 			err := decode.Decode(&data)
@@ -50,6 +55,8 @@ func (t *Task) setAPICollector(conf collectorConf) {
 
 			t.msgs <- data
 			w.WriteHeader(201)
+
+			w.Write(res)
 		}
 	})
 
@@ -260,7 +267,6 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 }
 
 func (t *Task) setDirCollector(conf collectorConf) {
-	
 
 }
 
