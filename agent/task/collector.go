@@ -6,17 +6,21 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"logagent/kafka"
 	"logagent/tail"
 	"logagent/util"
 	"net"
 	"net/http"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Shopify/sarama"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/radovskyb/watcher"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -170,36 +174,80 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 }
 
 func (t *Task) setFileCollector(conf collectorConf) {
-	tails, err := tail.TailFile(conf.FileName, tail.Config{
-		ReOpen:    !conf.NoReopen,
-		Follow:    true,
-		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
-		MustExist: false,
-	})
+	var current *tail.Tail
+	var err error
+	tailInit := make(chan bool)
 
-	if err != nil {
-		t.logger.Fatalf("tailf err %s", err)
+	dir, pattern := filepath.Split(conf.FileName)
+	r := regexp.MustCompile(pattern)
+
+	w := watcher.New()
+	w.SetMaxEvents(1)
+	w.FilterOps(watcher.Create)
+	filter := watcher.RegexFilterHook(r, false)
+	w.AddFilterHook(filter)
+
+	if err := w.Add(dir); err != nil {
+		t.logger.Fatal(err)
+	}
+
+	path := getLatestFile(dir, r)
+	if len(path) > 0 {
+		if current, err = getTailf(path); err != nil {
+			t.logger.Fatal(err)
+			tailInit <- true
+		}
 	}
 
 	t.collector = func() {
-		var ok bool
-		var msg *tail.Line
-		for {
-			select {
-			case <-t.ctx.Done():
-				return
-			case msg, ok = <-tails.Lines:
-				if !ok {
-					fmt.Printf("tail file close reopen, filename:%s\n", tails.Filename)
-					time.Sleep(1000 * time.Millisecond)
-					continue
-				}
-				t.msgs <- message{
-					"message":   msg.Text,
-					"timestamp": msg.Time,
-					"device_id": t.deviceID,
+		go func() {
+			for {
+				select {
+				case event := <-w.Event:
+					if !event.IsDir() {
+						if current != nil {
+							current.Stop()
+						} else {
+							tailInit <- true
+						}
+						current, err = getTailf(event.Path)
+						if err != nil {
+							t.logger.Error(err)
+						}
+					}
+				case err := <-w.Error:
+					log.Fatalln(err)
+				case <-w.Closed:
+					return
 				}
 			}
+		}()
+
+		go func() {
+			var ok bool
+			var msg *tail.Line
+			<-tailInit
+			for {
+				select {
+				case <-t.ctx.Done():
+					return
+				case msg, ok = <-current.Lines:
+					if !ok {
+						fmt.Printf("tail file close reopen, filename:%s\n", current.Filename)
+						time.Sleep(1000 * time.Millisecond)
+						continue
+					}
+					t.msgs <- message{
+						"message":   msg.Text,
+						"timestamp": msg.Time,
+						"device_id": t.deviceID,
+					}
+				}
+			}
+		}()
+
+		if err := w.Start(time.Millisecond * 100); err != nil {
+			log.Fatalln(err)
 		}
 	}
 }
@@ -271,10 +319,6 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 	}
 }
 
-func (t *Task) setDirCollector(conf collectorConf) {
-
-}
-
 func (t *Task) initCollector(conf collectorConf) {
 	switch conf.Mode {
 	case "api":
@@ -285,8 +329,6 @@ func (t *Task) initCollector(conf collectorConf) {
 		t.setFileCollector(conf)
 	case "kafka":
 		t.setKafkaCollector(conf)
-	case "dir":
-		t.setDirCollector(conf)
 	default:
 		t.logger.Fatalf("unsupported collector mode `%s`", conf.Mode)
 	}

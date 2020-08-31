@@ -3,7 +3,6 @@ package task
 type collectorConf struct {
 	Timeout int `json:",omitempty"`
 	// file
-	NoReopen bool   `json:",omitempty"`
 	Mode     string `json:",omitempty"`
 	FileName string `json:",omitempty"`
 	// api

@@ -317,6 +317,22 @@ func (t *Task) initRewriters(rewritersConf []rewriterConf) {
 				}
 				return msg, nil
 			})
+		case "unjsonify":
+			if len(conf.Column) == 0 {
+				t.configureFatal("jsonify rewrite", "column")
+			}
+			t.setProcessor(func(msg message) (message, error) {
+				obj, ok := msg[conf.Column]
+				if !ok {
+					return msg, nil
+				}
+				ret, err := json.Marshal(obj)
+				if err != nil {
+					return nil, err
+				}
+				msg[conf.Column] = ret
+				return msg, nil
+			})
 		case "command":
 			if len(conf.Column) == 0 {
 				t.configureFatal("command rewrite", "column")
