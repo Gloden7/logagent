@@ -4,7 +4,7 @@ type collectorConf struct {
 	Timeout int `json:",omitempty"`
 	// file
 	Mode     string `json:",omitempty"`
-	FileName string `json:",omitempty"`
+	Filename string `json:",omitempty"`
 	// api
 	URL string `json:",omitempty"`
 	// api syslog

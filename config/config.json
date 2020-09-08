@@ -8,8 +8,23 @@
 	"tasks": [
 		{
 			"Collector": {
-				"Mode": "syslog",
+				"Mode": "api",
 				"Addr": "127.0.0.1:8000"
+			},
+			"Handlers": [
+				{
+					"Mode": "stream",
+					"Topic": "protection",
+					"Addrs": ["10.50.36.215:9092"],
+					"RequiredAcks": -1
+				}
+			]
+		},
+		{
+			"Collector": {
+				"Mode": "api",
+				"Addr": "127.0.0.1:8000",
+				"Url": "/api/v1.0/events"
 			},
 			"Handlers": [
 				{

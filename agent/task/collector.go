@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"logagent/kafka"
 	"logagent/tail"
 	"logagent/util"
@@ -26,6 +25,9 @@ import (
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func (t *Task) setAPICollector(conf collectorConf) {
+	if len(conf.Addr) == 0 {
+		t.configureFatal("api collector", "addr")
+	}
 	var url string
 	if len(conf.URL) > 0 {
 		if !strings.HasPrefix(conf.URL, "/") {
@@ -35,8 +37,7 @@ func (t *Task) setAPICollector(conf collectorConf) {
 	} else {
 		url = "/logs"
 	}
-
-	serverMux := http.NewServeMux()
+	srv := getSrv(conf.Addr)
 
 	yes, _ := json.Marshal(map[string]interface{}{
 		"code":    0,
@@ -47,10 +48,9 @@ func (t *Task) setAPICollector(conf collectorConf) {
 		"message": "bad request format",
 	})
 
-	serverMux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
+	srv.addHandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			data := message{
-				"device_id": t.deviceID,
 				"timestamp": time.Now(),
 			}
 			decode := json.NewDecoder(r.Body)
@@ -63,25 +63,18 @@ func (t *Task) setAPICollector(conf collectorConf) {
 				w.Write(no)
 				return
 			}
+			data["device_id"] = t.deviceID
 			t.msgs <- data
 			w.WriteHeader(201)
 			w.Write(yes)
 		}
 	})
 
-	srv := http.Server{
-		Addr:    conf.Addr,
-		Handler: serverMux,
-	}
-
-	t.addCloser(&srv)
+	t.addCloser(srv.server)
 
 	t.collector = func() {
-		t.logger.Infof("api server start %s", conf.Addr)
-		err := srv.ListenAndServe()
-
-		if err != nil && err != http.ErrServerClosed {
-			t.logger.Panic(err)
+		if err := srv.start(); err != nil && err != http.ErrServerClosed {
+			t.logger.Fatal(err)
 		}
 	}
 }
@@ -174,80 +167,40 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 }
 
 func (t *Task) setFileCollector(conf collectorConf) {
-	var current *tail.Tail
-	var err error
-	tailInit := make(chan bool)
+	if len(conf.Filename) == 0 {
+		t.configureFatal("file Collector", "filename")
+	}
 
-	dir, pattern := filepath.Split(conf.FileName)
-	r := regexp.MustCompile(pattern)
-
-	w := watcher.New()
-	w.SetMaxEvents(1)
-	w.FilterOps(watcher.Create)
-	filter := watcher.RegexFilterHook(r, false)
-	w.AddFilterHook(filter)
-
-	if err := w.Add(dir); err != nil {
+	tailf, err := tail.TailFile(conf.Filename, tail.Config{
+		Follow:    true,
+		ReOpen:    true,
+		Location:  &tail.SeekInfo{Offset: 0, Whence: 2},
+		MustExist: true,
+	})
+	if err != nil {
 		t.logger.Fatal(err)
 	}
 
-	path := getLatestFile(dir, r)
-	if len(path) > 0 {
-		if current, err = getTailf(path); err != nil {
-			t.logger.Fatal(err)
-			tailInit <- true
-		}
-	}
-
 	t.collector = func() {
-		go func() {
-			for {
-				select {
-				case event := <-w.Event:
-					if !event.IsDir() {
-						if current != nil {
-							current.Stop()
-						} else {
-							tailInit <- true
-						}
-						current, err = getTailf(event.Path)
-						if err != nil {
-							t.logger.Error(err)
-						}
-					}
-				case err := <-w.Error:
-					log.Fatalln(err)
-				case <-w.Closed:
-					return
+		var ok bool
+		var msg *tail.Line
+
+		for {
+			select {
+			case <-t.ctx.Done():
+				return
+			case msg, ok = <-tailf.Lines:
+				if !ok {
+					fmt.Printf("tail file close reopen, filename:%s\n", tailf.Filename)
+					time.Sleep(1000 * time.Millisecond)
+					continue
+				}
+				t.msgs <- message{
+					"message":   msg.Text,
+					"timestamp": msg.Time,
+					"device_id": t.deviceID,
 				}
 			}
-		}()
-
-		go func() {
-			var ok bool
-			var msg *tail.Line
-			<-tailInit
-			for {
-				select {
-				case <-t.ctx.Done():
-					return
-				case msg, ok = <-current.Lines:
-					if !ok {
-						fmt.Printf("tail file close reopen, filename:%s\n", current.Filename)
-						time.Sleep(1000 * time.Millisecond)
-						continue
-					}
-					t.msgs <- message{
-						"message":   msg.Text,
-						"timestamp": msg.Time,
-						"device_id": t.deviceID,
-					}
-				}
-			}
-		}()
-
-		if err := w.Start(time.Millisecond * 100); err != nil {
-			log.Fatalln(err)
 		}
 	}
 }
@@ -308,13 +261,64 @@ func (t *Task) setKafkaCollector(conf collectorConf) {
 					return
 				case msg = <-kafkaMsg:
 					//Messages()该方法返回一个消费消息类型的只读通道，由代理产生
-					t.msgs <- map[string]interface{}{
+					t.msgs <- message{
 						"message":   util.Bytes2str(msg.Value),
 						"timestamp": time.Now(),
 						"device_id": t.deviceID,
 					}
 				}
 			}
+		}
+	}
+}
+
+func (t *Task) setDirCollector(conf collectorConf) {
+	if len(conf.Filename) == 0 {
+		t.configureFatal("dir collector", "filename")
+	}
+
+	dir, filename := filepath.Split(conf.Filename)
+	r := regexp.MustCompile(fmt.Sprintf("^%s$", filename))
+
+	w := watcher.New()
+	w.SetMaxEvents(1)
+	w.FilterOps(watcher.Create)
+	filter := watcher.RegexFilterHook(r, false)
+	w.AddFilterHook(filter)
+
+	if err := w.Add(dir); err != nil {
+		t.logger.Fatal(err)
+	}
+
+	t.collector = func() {
+		go func() {
+			for {
+				select {
+				case e := <-w.Event:
+					if !e.IsDir() {
+						b, err := ioutil.ReadFile(e.Path)
+						if err != nil {
+							t.logger.Error(err)
+							continue
+						}
+						t.msgs <- message{
+							"message":   util.Bytes2str(b),
+							"timestamp": time.Now(),
+							"device_id": t.deviceID,
+						}
+					}
+				case err := <-w.Error:
+					t.logger.Error(err)
+				case <-w.Closed:
+					return
+				case <-t.ctx.Done():
+					w.Close()
+				}
+			}
+		}()
+
+		if err := w.Start(time.Millisecond * 100); err != nil {
+			t.logger.Fatal(err)
 		}
 	}
 }
@@ -329,6 +333,8 @@ func (t *Task) initCollector(conf collectorConf) {
 		t.setFileCollector(conf)
 	case "kafka":
 		t.setKafkaCollector(conf)
+	case "dir":
+		t.setDirCollector(conf)
 	default:
 		t.logger.Fatalf("unsupported collector mode `%s`", conf.Mode)
 	}
