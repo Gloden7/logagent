@@ -104,16 +104,16 @@ func (t *Task) setSyslogCollector(conf collectorConf) {
 				case <-t.ctx.Done():
 					return
 				default:
-					var buf [1024]byte
+					buf := make([]byte, 1024, 65515)
 					n, _, err := listener.ReadFrom(buf[:])
 					if err != nil {
-						t.logger.Warn(err)
+						t.logger.Error(err)
 						continue
 					}
 					reader := bufio.NewReader(bytes.NewReader(buf[:n]))
 					msg, err := decode(reader, end)
 					if err != nil {
-						t.logger.Warn(err)
+						t.logger.Error(err)
 						continue
 					}
 					msg["device_id"] = t.deviceID

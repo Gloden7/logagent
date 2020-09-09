@@ -8,9 +8,9 @@
 	"tasks": [
 		{
 			"Collector": {
-				"Mode": "kafka",
-				"Addrs": ["10.50.36.215:9092"],
-				"Topic": "protection"
+				"Mode": "syslog",
+				"Addr": ":514",
+				"Protocol": "udp"
 			},
 			"Parser": {
 				"Mode": "jsonify"
@@ -19,9 +19,9 @@
 				{
 					"Mode": "database",
 					"URI": "postgresql://postgres:waftest@10.20.136.14:5432/protection",
-					"Table": "signatures",
-					"columns": ["timestamp", "severity", "txn_id", "device_id", "app_id", "dst_ip", "dst_port", 
-						"src_ip", "src_port", "url", "method", "host", "rule_id", "category"]
+					"Table": "protection",
+					"columns": ["timestamp", "module", "severity", "txn_id", "device_id", "app_id", "dst_ip", "dst_port", 
+						"src_ip", "src_port", "url", "method", "host", "http_version", "rule_id", "category"]
 				},
 				{
 					"Mode": "database",
