@@ -47,6 +47,7 @@ func createTable(db *sql.DB, driverName string, table string, fields []string) e
 func genInsertSQL(dn string, tableName string, columns []string) string {
 	var sql string
 	n := len(columns)
+	var b strings.Builder
 	switch dn {
 	case "pg":
 		for i := 1; i <= n; i++ {
@@ -56,6 +57,17 @@ func genInsertSQL(dn string, tableName string, columns []string) string {
 			}
 			sql += ","
 		}
+
+		for i := 0; i < len(columns); i++ {
+			n += len(columns[i])
+		}
+
+		b.Grow(n)
+		b.WriteString(fmt.Sprintf("\"%s\"", strings.ToLower(columns[0])))
+		for _, s := range columns[1:] {
+			b.WriteByte(',')
+			b.WriteString(fmt.Sprintf("\"%s\"", strings.ToLower(s)))
+		}
 	default:
 		for i := 1; i <= n; i++ {
 			sql += "?"
@@ -64,17 +76,13 @@ func genInsertSQL(dn string, tableName string, columns []string) string {
 			}
 			sql += ","
 		}
-	}
 
-	for i := 0; i < len(columns); i++ {
-		n += len(columns[i])
-	}
-	var b strings.Builder
-	b.Grow(n)
-	b.WriteString(fmt.Sprintf("\"%s\"", strings.ToLower(columns[0])))
-	for _, s := range columns[1:] {
-		b.WriteByte(',')
-		b.WriteString(fmt.Sprintf("\"%s\"", strings.ToLower(s)))
+		b.Grow(n)
+		b.WriteString(fmt.Sprintf("`%s`", strings.ToLower(columns[0])))
+		for _, s := range columns[1:] {
+			b.WriteByte(',')
+			b.WriteString(fmt.Sprintf("`%s`", strings.ToLower(s)))
+		}
 	}
 
 	return fmt.Sprintf("INSERT INTO %s(%s)values(%s)", tableName,
