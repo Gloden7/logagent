@@ -28,7 +28,11 @@
 			},
 			"Handlers": [
 				{
-					"Mode": "stream"
+					"Mode": "database",
+					"URI": "postgresql://postgres:waftest@10.50.36.158:5432/protection?sslmode=disable",
+                    "Timeout": 100,
+					"Table": "protection",
+					"columns": ["src_ip"]
 				}
 			]
 		}

@@ -79,7 +79,7 @@ func (t *Task) newDBHandler(conf handlerConf) handler {
 
 	switch dn {
 	case "postgresql":
-		dn = "pg"
+		dn = "postgres"
 		dsn = conf.URI
 	case "mysql":
 		i := strings.IndexByte(dsn, '@') + 1
@@ -103,7 +103,7 @@ func (t *Task) newDBHandler(conf handlerConf) handler {
 	database, err := initDatabase(dn, dsn)
 	dbInit <- true
 	if err != nil {
-		t.logger.Panic(err)
+		t.logger.Fatal(err)
 	}
 	t.addCloser(database)
 

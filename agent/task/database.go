@@ -9,7 +9,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 
 	// postgresql driver
-	_ "github.com/blusewang/pg"
+	_ "github.com/lib/pq"
 	// sqlite driver
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -49,7 +49,7 @@ func genInsertSQL(dn string, tableName string, columns []string) string {
 	n := len(columns)
 	var b strings.Builder
 	switch dn {
-	case "pg":
+	case "postgres":
 		for i := 1; i <= n; i++ {
 			sql += fmt.Sprintf("$%d", i)
 			if i == n {
